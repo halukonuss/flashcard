@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flashcard Uygulaması</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    .card-container {
+      perspective: 1000px;
+      width: 100%;
+      max-width: 400px;
+      margin: auto;
+    }
+    .card {
+      width: 100%;
+      height: 250px;
+      position: relative;
+      transition: transform 0.6s;
+      transform-style: preserve-3d;
+    }
+    .flipped {
+      transform: rotateY(180deg);
+    }
+    .card-face {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      backface-visibility: hidden;
+      border-radius: 1rem;
+      overflow: hidden;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    }
+    .card-front {
+      background-color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .card-front img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .card-back {
+      background-color: #f3f4f6;
+      transform: rotateY(180deg);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      text-align: center;
+    }
+    #chartContainer {
+      position: relative;
+      width: 100%;
+      max-width: 300px;
+      margin: auto;
+    }
+    #chartCenterText {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #4B5563;
+    }
+  </style>
+</head>
+<body class="bg-gradient-to-br from-indigo-100 to-purple-200 min-h-screen p-6">
+  <div class="max-w-2xl mx-auto">
+    <h1 class="text-3xl font-bold text-center text-purple-700 mb-6">📚 Flashcard Uygulaması</h1>
+
+    <!-- Kart Ekleme Alanı -->
+    <div id="card-form" class="bg-white p-6 rounded-xl shadow mb-6">
+      <h2 class="text-xl font-semibold text-blue-700 mb-4">Yeni Kart Ekle</h2>
+      <input type="file" id="image-input" accept="image/*" class="w-full border p-2 rounded mb-2">
+      <input type="text" id="answer-input" placeholder="Doğru cevap" class="w-full border p-2 rounded mb-4">
+      <button onclick="addCard()" class="bg-blue-600 text-white px-4 py-2 rounded w-full">Kartı Kaydet</button>
+      <p class="mt-4 text-sm text-gray-600">Toplam Kart: <span id="card-count">0</span></p>
+      <button onclick="startStudy()" class="mt-4 bg-green-600 text-white px-4 py-2 rounded w-full">📖 Çalışmaya Başla</button>
+    </div>
+
+    <!-- Kart Çalışma Alanı -->
+    <div id="study-area" class="hidden bg-white p-6 rounded-xl shadow mb-6">
+      <div class="card-container mb-4">
+        <div id="flashcard" class="card">
+          <div class="card-face card-front">
+            <img id="card-image" src="" alt="Kart Resmi">
+          </div>
+          <div class="card-face card-back">
+            <p id="card-result" class="text-xl font-bold"></p>
+            <p id="correct-answer" class="text-sm text-gray-600"></p>
+          </div>
+        </div>
+      </div>
+      <input type="text" id="user-input" placeholder="Cevabınız" class="w-full p-3 border rounded mb-4">
+      <div class="flex gap-2">
+        <button onclick="checkFlipAnswer()" class="w-full bg-green-600 text-white py-2 rounded">Kontrol Et</button>
+        <button onclick="skipCard()" class="w-full bg-gray-400 text-white py-2 rounded">Atla</button>
+      </div>
+    </div>
+
+    <!-- Sonuç Grafiği -->
+    <div id="stats-screen" class="hidden bg-white p-6 rounded-xl shadow">
+      <h2 class="text-xl font-semibold text-yellow-600 mb-4 text-center">📊 Sonuçlar</h2>
+      <div id="chartContainer">
+        <canvas id="stats-chart"></canvas>
+        <div id="chartCenterText"></div>
+      </div>
+      <p id="stats-summary" class="text-center text-gray-700 mt-4"></p>
+    </div>
+  </div>
+
+  <script>
+    let cards = [];
+    let currentIndex = 0;
+    let score = 0, skipped = 0;
+
+    function addCard() {
+      const imageInput = document.getElementById("image-input");
+      const answer = document.getElementById("answer-input").value.trim();
+      if (!imageInput.files[0] || !answer) return alert("Eksik bilgi");
+
+      const reader = new FileReader();
+      reader.onload = e => {
+        cards.push({ image: e.target.result, answer });
+        document.getElementById("card-count").textContent = cards.length;
+        imageInput.value = "";
+        document.getElementById("answer-input").value = "";
+      };
+      reader.readAsDataURL(imageInput.files[0]);
+    }
+
+    function startStudy() {
+      if (cards.length === 0) return alert("Önce kart ekleyin.");
+      currentIndex = 0; score = 0; skipped = 0;
+      document.getElementById("card-form").classList.add("hidden");
+      document.getElementById("study-area").classList.remove("hidden");
+      showCard();
+    }
+
+    function showCard() {
+      const card = cards[currentIndex];
+      document.getElementById("card-image").src = card.image;
+      document.getElementById("user-input").value = "";
+      document.getElementById("flashcard").classList.remove("flipped");
+      document.getElementById("card-result").textContent = "";
+      document.getElementById("correct-answer").textContent = "";
+    }
+
+    function checkFlipAnswer() {
+      const input = document.getElementById("user-input").value.trim().toLowerCase();
+      const correct = cards[currentIndex].answer.toLowerCase();
+      const resultText = document.getElementById("card-result");
+      const answerText = document.getElementById("correct-answer");
+      const card = document.getElementById("flashcard");
+
+      if (input === correct) {
+        score++;
+        resultText.textContent = "✅ Doğru!";
+        resultText.className = "text-xl font-bold text-green-600";
+      } else {
+        resultText.textContent = "❌ Yanlış";
+        resultText.className = "text-xl font-bold text-red-600";
+      }
+      answerText.textContent = `Doğru cevap: ${cards[currentIndex].answer}`;
+      card.classList.add("flipped");
+
+      setTimeout(() => {
+        currentIndex++;
+        if (currentIndex < cards.length) {
+          showCard();
+        } else {
+          showStats();
+        }
+      }, 2000);
+    }
+
+    function skipCard() {
+      skipped++;
+      currentIndex++;
+      if (currentIndex < cards.length) {
+        showCard();
+      } else {
+        showStats();
+      }
+    }
+
+    function showStats() {
+      const incorrect = cards.length - score - skipped;
+      const successRate = Math.round((score / cards.length) * 100);
+      let recommendation = successRate >= 90 ? "Harika!" : successRate >= 70 ? "Çok iyi ama tekrar faydalı olur." : successRate >= 50 ? "Fena değil, biraz daha çalış." : "Tekrar denemelisin.";
+
+      document.getElementById("study-area").classList.add("hidden");
+      document.getElementById("stats-screen").classList.remove("hidden");
+
+      const ctx = document.getElementById("stats-chart").getContext("2d");
+      new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: ['Doğru', 'Yanlış', 'Atlanan'],
+          datasets: [{
+            data: [score, incorrect, skipped],
+            backgroundColor: ['#10B981', '#EF4444', '#9CA3AF']
+          }]
+        },
+        options: {
+          plugins: { legend: { position: 'bottom' } },
+          cutout: '70%'
+        }
+      });
+
+      document.getElementById("chartCenterText").innerHTML = `${successRate}%<br><small>${recommendation}</small>`;
+      document.getElementById("stats-summary").textContent = `Toplam: ${cards.length} | Doğru: ${score} | Yanlış: ${incorrect} | Atlanan: ${skipped}`;
+    }
+  </script>
+</body>
+</html>
